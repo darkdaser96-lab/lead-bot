@@ -59,6 +59,17 @@ async function sendMessage(chatId, text, extra) {
   });
 }
 
+const LEAD_BTN = "Оставить заявку";
+
+function mainKeyboard() {
+  return {
+    keyboard: [[{ text: LEAD_BTN }]],
+    resize_keyboard: true,
+    is_persistent: true,
+    one_time_keyboard: false,
+  };
+}
+
 async function askStart(chatId) {
   const session = getSession(chatId);
   session.step = null;
@@ -67,14 +78,8 @@ async function askStart(chatId) {
   session.comment = "";
   await sendMessage(
     chatId,
-    "Здравствуйте! Здесь можно оставить заявку на услугу. Нажмите кнопку ниже — я спрошу имя, телефон и комментарий.",
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "Оставить заявку", callback_data: "start_lead" }],
-        ],
-      },
-    }
+    "Здравствуйте! Здесь можно оставить заявку на услугу. Нажмите кнопку «Оставить заявку» внизу экрана — я спрошу имя, телефон и комментарий.",
+    { reply_markup: mainKeyboard() }
   );
 }
 
@@ -138,9 +143,14 @@ async function finishLead(chatId, session, from) {
   clearSession(chatId);
   await sendMessage(
     chatId,
-    "Спасибо! Заявка отправлена. Мы свяжемся с вами."
+    "Спасибо! Заявка отправлена. Мы свяжемся с вами.",
+    { reply_markup: mainKeyboard() }
   );
-  await sendMessage(chatId, "Если нужна ещё одна заявка — нажмите /start.");
+  await sendMessage(
+    chatId,
+    "Если нужна ещё одна заявка — снова нажмите «Оставить заявку» внизу.",
+    { reply_markup: mainKeyboard() }
+  );
 }
 
 async function handleMessage(message) {
@@ -154,9 +164,18 @@ async function handleMessage(message) {
     return;
   }
 
+  if (text === LEAD_BTN) {
+    await startLead(chatId);
+    return;
+  }
+
   if (text === "/cancel") {
     clearSession(chatId);
-    await sendMessage(chatId, "Заявку отменил. Чтобы начать снова — /start.");
+    await sendMessage(
+      chatId,
+      "Заявку отменил. Чтобы начать снова — нажмите «Оставить заявку» внизу.",
+      { reply_markup: mainKeyboard() }
+    );
     return;
   }
 
@@ -194,7 +213,8 @@ async function handleMessage(message) {
 
   await sendMessage(
     chatId,
-    "Чтобы оставить заявку, нажмите /start и кнопку «Оставить заявку»."
+    "Чтобы оставить заявку, нажмите кнопку «Оставить заявку» внизу экрана.",
+    { reply_markup: mainKeyboard() }
   );
 }
 
