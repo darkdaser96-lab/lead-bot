@@ -6,6 +6,9 @@
 
 const sessions = new Map();
 
+const LEAD_BTN = "Оставить заявку";
+const SERVICES = ["Замер", "Ремонт", "Консультация", "Другое"];
+
 function token() {
   return process.env.TELEGRAM_BOT_TOKEN || "";
 }
@@ -41,7 +44,13 @@ async function tg(method, body) {
 function getSession(chatId) {
   const key = String(chatId);
   if (!sessions.has(key)) {
-    sessions.set(key, { step: null, name: "", phone: "", comment: "" });
+    sessions.set(key, {
+      step: null,
+      service: "",
+      name: "",
+      phone: "",
+      comment: "",
+    });
   }
   return sessions.get(key);
 }
@@ -59,8 +68,6 @@ async function sendMessage(chatId, text, extra) {
   });
 }
 
-const LEAD_BTN = "Оставить заявку";
-
 function mainKeyboard() {
   return {
     keyboard: [[{ text: LEAD_BTN }]],
@@ -70,26 +77,56 @@ function mainKeyboard() {
   };
 }
 
+function serviceKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Замер", callback_data: "svc:Замер" },
+        { text: "Ремонт", callback_data: "svc:Ремонт" },
+      ],
+      [
+        { text: "Консультация", callback_data: "svc:Консультация" },
+        { text: "Другое", callback_data: "svc:Другое" },
+      ],
+    ],
+  };
+}
+
 async function askStart(chatId) {
   const session = getSession(chatId);
   session.step = null;
+  session.service = "";
   session.name = "";
   session.phone = "";
   session.comment = "";
   await sendMessage(
     chatId,
-    "Здравствуйте! Здесь можно оставить заявку на услугу. Нажмите кнопку «Оставить заявку» внизу экрана — я спрошу имя, телефон и комментарий.",
+    "Здравствуйте! Здесь можно оставить заявку на услугу. Нажмите кнопку «Оставить заявку» внизу экрана.",
     { reply_markup: mainKeyboard() }
   );
 }
 
 async function startLead(chatId) {
   const session = getSession(chatId);
-  session.step = "name";
+  session.step = "service";
+  session.service = "";
   session.name = "";
   session.phone = "";
   session.comment = "";
-  await sendMessage(chatId, "Как вас зовут? Напишите имя.");
+  await sendMessage(chatId, "Какая услуга нужна?", {
+    reply_markup: serviceKeyboard(),
+  });
+}
+
+async function afterServiceChosen(chatId, service) {
+  const session = getSession(chatId);
+  session.service = service;
+  session.step = "name";
+  await sendMessage(
+    chatId,
+    "Услуга: <b>" + escapeHtml(service) + "</b>\nКак вас зовут? Напишите имя.",
+    { reply_markup: mainKeyboard() }
+  );
 }
 
 function escapeHtml(s) {
@@ -105,6 +142,9 @@ async function finishLead(chatId, session, from) {
   const uid = from && from.id != null ? String(from.id) : "—";
   const text =
     "<b>Новая заявка</b>\n" +
+    "Услуга: " +
+    escapeHtml(session.service || "—") +
+    "\n" +
     "Имя: " +
     escapeHtml(session.name) +
     "\n" +
@@ -123,7 +163,8 @@ async function finishLead(chatId, session, from) {
   if (!admin) {
     await sendMessage(
       chatId,
-      "Заявка сохранена, но ADMIN_CHAT_ID не задан на сервере. Напишите администратору."
+      "Заявка сохранена, но ADMIN_CHAT_ID не задан на сервере. Напишите администратору.",
+      { reply_markup: mainKeyboard() }
     );
     clearSession(chatId);
     return;
@@ -134,7 +175,8 @@ async function finishLead(chatId, session, from) {
   } catch (err) {
     await sendMessage(
       chatId,
-      "Не удалось отправить заявку администратору. Попробуйте позже или напишите нам напрямую."
+      "Не удалось отправить заявку администратору. Попробуйте позже или напишите нам напрямую.",
+      { reply_markup: mainKeyboard() }
     );
     clearSession(chatId);
     return;
@@ -176,6 +218,17 @@ async function handleMessage(message) {
       "Заявку отменил. Чтобы начать снова — нажмите «Оставить заявку» внизу.",
       { reply_markup: mainKeyboard() }
     );
+    return;
+  }
+
+  if (session.step === "service") {
+    if (SERVICES.includes(text)) {
+      await afterServiceChosen(chatId, text);
+      return;
+    }
+    await sendMessage(chatId, "Выберите услугу кнопкой ниже.", {
+      reply_markup: serviceKeyboard(),
+    });
     return;
   }
 
@@ -229,6 +282,13 @@ async function handleCallback(query) {
   }
   if (data === "start_lead") {
     await startLead(chatId);
+    return;
+  }
+  if (data.startsWith("svc:")) {
+    const service = data.slice(4);
+    if (SERVICES.includes(service)) {
+      await afterServiceChosen(chatId, service);
+    }
   }
 }
 
